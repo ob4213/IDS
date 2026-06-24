@@ -1,0 +1,68 @@
+import pandas as pd
+
+# Name of the CSV file containing exported Windows security log data
+LOG_FILE = "security_logs.csv"
+
+# Minimum number of failed attempts required to trigger an alert
+ALERT_THRESHOLD = 3
+
+# Required columns expected in the input CSV file
+REQUIRED_COLUMNS = ["Timestamp", "EventID", "Username", "SourceIP", "Message"]
+
+
+def load_security_logs(file_path):
+    """Load security log data from a CSV file into a Pandas DataFrame."""
+    try:
+        return pd.read_csv(file_path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"The log file '{file_path}' was not found.")
+
+
+def validate_columns(dataframe):
+    """Verify that the CSV file contains all required columns."""
+    missing_columns = [column for column in REQUIRED_COLUMNS if column not in dataframe.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+
+
+def detect_failed_logins(dataframe):
+    """Filter Windows Security Event Logs for failed logon Event ID 4625."""
+    return dataframe[dataframe["EventID"] == 4625]
+
+
+def generate_alerts(failed_logins, threshold):
+    """Group failed logins and return activity that meets or exceeds the alert threshold."""
+    summary = (
+        failed_logins
+        .groupby(["Username", "SourceIP"])
+        .size()
+        .reset_index(name="FailedAttempts")
+    )
+    return summary[summary["FailedAttempts"] >= threshold]
+
+
+def main():
+    """Run failed login detection and generate an alert report."""
+    logs = load_security_logs(LOG_FILE)
+    validate_columns(logs)
+
+    failed_logins = detect_failed_logins(logs)
+    alerts = generate_alerts(failed_logins, ALERT_THRESHOLD)
+
+    alerts.to_csv("alerts_report.csv", index=False)
+
+    print("Failed Login Detection Report")
+    print("-" * 40)
+    print(f"Total failed login events found: {len(failed_logins)}")
+    print(f"Alert threshold: {ALERT_THRESHOLD} failed attempts")
+
+    if alerts.empty:
+        print("No suspicious activity detected.")
+    else:
+        print("\nSuspicious activity detected:")
+        print(alerts)
+        print("\nAlert report saved as alerts_report.csv")
+
+
+if __name__ == "__main__":
+    main()
